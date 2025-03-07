@@ -8,12 +8,8 @@
   "scripts": {
     "dev": "mprocs",
     "dev:frontend": "vite",
-    "dev:supersim": "pnpm supersim --interop.autorelay --logs.directory supersim-logs",
     "build:frontend": "vite build",
     "build:contracts": "forge build --root contracts",
-    "deploy:supersim": "pnpm build:contracts && sup deploy create2 --chains supersiml2a,supersiml2b --salt ethers phoenix --forge-artifact-path contracts/out/CrossChainCounter.sol/CrossChainCounter.json --network supersim --private-key 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
-    "deploy:counter-incrementer:supersim": "pnpm build:contracts && sup deploy create2 --chains supersiml2a,supersiml2b --salt ethers phoenix --forge-artifact-path contracts/out/CrossChainCounterIncrementer.sol/CrossChainCounterIncrementer.json --network supersim --private-key 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
-    "deploy:interop-alpha": "pnpm build:contracts && sup deploy create2 --chains interop-alpha-0,interop-alpha-1 --salt ethers phoenix --forge-artifact-path contracts/out/CrossChainCounter.sol/CrossChainCounter.json --network interop-alpha --verify",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
