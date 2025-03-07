@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 import { Vm } from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
-import {ICreateX} from "createx/ICreateX.sol";
+import {ICreateX} from "@createx/ICreateX.sol";
 
 library DeployUtils {
      Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));

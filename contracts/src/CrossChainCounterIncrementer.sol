@@ -17,10 +17,16 @@ contract CrossChainCounterIncrementer {
     /// @notice Sends a message to increment a counter on another chain
     /// @param counterChainId The chain ID where the target counter contract is deployed
     /// @param counterAddress The address of the counter contract on the target chain
-    function increment(uint256 counterChainId, address counterAddress) public {
+    function increment(uint256 counterChainId, address counterAddress) public returns (bytes32) {
+        // Encode the function call data for the counter's increment function
+        bytes memory data = abi.encodeWithSelector(CrossChainCounter.increment.selector);
+        
         // Send a cross-chain message to increment the counter on the target chain
-        messenger.sendMessage(
-            counterChainId, counterAddress, abi.encodeWithSelector(CrossChainCounter.increment.selector)
+        bytes32 msgHash = messenger.sendMessage(
+            counterChainId, 
+            counterAddress, 
+            data
         );
+        return msgHash;
     }
 }

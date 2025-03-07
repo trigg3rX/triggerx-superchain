@@ -3,15 +3,15 @@ pragma solidity ^0.8.25;
 
 import {Script, console} from "forge-std/Script.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {ICreateX} from "createx/ICreateX.sol";
+import {ICreateX} from "@createx/ICreateX.sol";
 
 import {DeployUtils} from "../libraries/DeployUtils.sol";
 import {CrossChainCounter} from "../src/CrossChainCounter.sol";
-
+import {CrossChainCounterIncrementer} from "../src/CrossChainCounterIncrementer.sol";
 // Example forge script for deploying as an alternative to sup: super-cli (https://github.com/ethereum-optimism/super-cli)
 contract Deploy is Script {
     /// @notice Array of RPC URLs to deploy to, deploy to supersim 901 and 902 by default.
-    string[] private rpcUrls = ["http://localhost:9545", "http://localhost:9546"];
+    string[] private rpcUrls = ["https://interop-alpha-0.optimism.io", "https://interop-alpha-1.optimism.io"];
 
     /// @notice Modifier that wraps a function in broadcasting.
     modifier broadcast() {
@@ -33,6 +33,30 @@ contract Deploy is Script {
     function deployCrossChainCounterContract() public broadcast returns (address addr_) {
         bytes memory initCode = abi.encodePacked(type(CrossChainCounter).creationCode);
         addr_ = DeployUtils.deployContract("CrossChainCounter", _implSalt(), initCode);
+    }
+
+    /// @notice The CREATE2 salt to be used when deploying a contract.
+    function _implSalt() internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(vm.envOr("DEPLOY_SALT", string("ethers phoenix"))));
+    }
+}
+
+contract DeployIncrementer is Script {
+    /// @notice Modifier that wraps a function in broadcasting.
+    modifier broadcast() {
+        vm.startBroadcast(msg.sender);
+        _;
+        vm.stopBroadcast();
+    }
+
+    function run() public {
+        vm.createSelectFork("https://interop-alpha-0.optimism.io");
+        deployIncrementerContract();
+    }
+
+    function deployIncrementerContract() public broadcast returns (address addr_) {
+        bytes memory initCode = abi.encodePacked(type(CrossChainCounterIncrementer).creationCode);
+        addr_ = DeployUtils.deployContract("CrossChainCounterIncrementer", _implSalt(), initCode);
     }
 
     /// @notice The CREATE2 salt to be used when deploying a contract.
