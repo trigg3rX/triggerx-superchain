@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -15,31 +15,32 @@ import {
   useWaitForTransactionReceipt,
   useWatchContractEvent,
   useWriteContract,
+  useAccount,
+  useChainId,
+  useSwitchChain,
 } from 'wagmi';
-import { supersimL2A, supersimL2B } from '@eth-optimism/viem/chains';
+import { interopAlpha0, interopAlpha1 } from '@eth-optimism/viem/chains';
 import { contracts, l2ToL2CrossDomainMessengerAbi } from '@eth-optimism/viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { sortBy } from '@/lib/utils';
 import { encodeFunctionData } from 'viem';
 import { crossChainCounterAbi } from '@/abi/crossChainCounterAbi';
 import { crossChainCounterIncrementerAbi } from '@/abi/crossChainCounterIncrementerAbi';
+import { Header } from '@/components/Header';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
 const CONFIG = {
-  devAccount: privateKeyToAccount(
-    '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-  ),
-  sourceChain: supersimL2A,
-  destinationChain: supersimL2B,
+  // Using Metamask wallet instead of hardcoded private key
+  sourceChain: interopAlpha0,
+  destinationChain: interopAlpha1,
   contracts: {
     counter: {
       address: '0x1b68f70248d6d2176c88d9285564cd23173d41d3',
     },
     counterIncrementer: {
-      address: '0x52f498e866bdebec46b6939080a66332e2a1cb1e',
+      address: '0x8e238A310C851e851B59974E2bcD7e833fD3CE60',
     },
   },
 } as const;
@@ -49,18 +50,57 @@ const CONFIG = {
 // ============================================================================
 
 const CounterIncrementer = () => {
+  const { address } = useAccount();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
   const { data, writeContract, isPending } = useWriteContract();
-  const { isLoading: isWaitingForReceipt } = useWaitForTransactionReceipt({
+  const { isLoading: isWaitingForReceipt, isSuccess } = useWaitForTransactionReceipt({
     hash: data,
     chainId: CONFIG.sourceChain.id,
     pollingInterval: 1000,
   });
 
+  const isWrongChain = chainId !== CONFIG.sourceChain.id;
+  const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
+
+  // Reset status when transaction completes
+  useEffect(() => {
+    if (isSuccess) {
+      setTxStatus('success');
+      const timer = setTimeout(() => setTxStatus('idle'), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSuccess]);
+
   const buttonText = isWaitingForReceipt
     ? 'Waiting for confirmation...'
     : isPending
       ? 'Sending...'
-      : 'Increment';
+      : isWrongChain
+        ? `Switch to ${CONFIG.sourceChain.name}`
+        : txStatus === 'success'
+          ? 'Increment Sent!'
+          : 'Increment';
+
+  const handleClick = () => {
+    if (isWrongChain) {
+      switchChain({ chainId: CONFIG.sourceChain.id });
+    } else {
+      setTxStatus('pending');
+      try {
+        writeContract({
+          chainId: CONFIG.sourceChain.id,
+          address: CONFIG.contracts.counterIncrementer.address,
+          abi: crossChainCounterIncrementerAbi,
+          functionName: 'increment',
+          args: [BigInt(CONFIG.destinationChain.id), CONFIG.contracts.counter.address],
+        });
+      } catch (error) {
+        setTxStatus('error');
+        setTimeout(() => setTxStatus('idle'), 3000);
+      }
+    }
+  };
 
   return (
     <>
@@ -87,21 +127,23 @@ const CounterIncrementer = () => {
               </div>
             </div>
           </div>
+          {txStatus === 'success' && (
+            <div className="text-sm p-2 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-100 rounded">
+              Transaction sent successfully! The counter will be incremented once the message is received on the destination chain.
+            </div>
+          )}
+          {txStatus === 'error' && (
+            <div className="text-sm p-2 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-100 rounded">
+              Transaction failed. Please try again.
+            </div>
+          )}
         </CardContent>
         <CardFooter className="flex">
           <Button
             className="flex-1"
-            onClick={() =>
-              writeContract({
-                account: CONFIG.devAccount,
-                chainId: CONFIG.sourceChain.id,
-                address: CONFIG.contracts.counterIncrementer.address,
-                abi: crossChainCounterIncrementerAbi,
-                functionName: 'increment',
-                args: [BigInt(CONFIG.destinationChain.id), CONFIG.contracts.counter.address],
-              })
-            }
-            disabled={isPending || isWaitingForReceipt}
+            onClick={handleClick}
+            disabled={!address || isPending || isWaitingForReceipt || txStatus === 'success'}
+            variant={txStatus === 'success' ? 'outline' : 'default'}
           >
             {(isPending || isWaitingForReceipt) && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -115,23 +157,66 @@ const CounterIncrementer = () => {
 };
 
 const DirectMessengerCall = () => {
+  const { address } = useAccount();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
   const { writeContract, isPending, data } = useWriteContract();
-  const { isLoading: isWaitingForReceipt } = useWaitForTransactionReceipt({
+  const { isLoading: isWaitingForReceipt, isSuccess } = useWaitForTransactionReceipt({
     hash: data,
     chainId: CONFIG.sourceChain.id,
     pollingInterval: 1000,
   });
 
+  const isWrongChain = chainId !== CONFIG.sourceChain.id;
+  const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
+
+  // Reset status when transaction completes
+  useEffect(() => {
+    if (isSuccess) {
+      setTxStatus('success');
+      const timer = setTimeout(() => setTxStatus('idle'), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSuccess]);
+
   const buttonText = isWaitingForReceipt
     ? 'Waiting for confirmation...'
     : isPending
       ? 'Sending...'
-      : 'Send Message';
+      : isWrongChain
+        ? `Switch to ${CONFIG.sourceChain.name}`
+        : txStatus === 'success'
+          ? 'Message Sent!'
+          : 'Send Message';
 
   const incrementFunctionData = encodeFunctionData({
     abi: crossChainCounterAbi,
     functionName: 'increment',
   });
+
+  const handleClick = () => {
+    if (isWrongChain) {
+      switchChain({ chainId: CONFIG.sourceChain.id });
+    } else {
+      setTxStatus('pending');
+      try {
+        writeContract({
+          chainId: CONFIG.sourceChain.id,
+          address: contracts.l2ToL2CrossDomainMessenger.address,
+          abi: l2ToL2CrossDomainMessengerAbi,
+          functionName: 'sendMessage',
+          args: [
+            BigInt(CONFIG.destinationChain.id),
+            CONFIG.contracts.counter.address,
+            incrementFunctionData,
+          ],
+        });
+      } catch (error) {
+        setTxStatus('error');
+        setTimeout(() => setTxStatus('idle'), 3000);
+      }
+    }
+  };
 
   return (
     <>
@@ -162,25 +247,23 @@ const DirectMessengerCall = () => {
               </div>
             </div>
           </div>
+          {txStatus === 'success' && (
+            <div className="text-sm p-2 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-100 rounded">
+              Message sent successfully! The counter will be incremented once the message is received on the destination chain.
+            </div>
+          )}
+          {txStatus === 'error' && (
+            <div className="text-sm p-2 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-100 rounded">
+              Transaction failed. Please try again.
+            </div>
+          )}
         </CardContent>
         <CardFooter>
           <Button
             className="flex-1"
-            onClick={() =>
-              writeContract({
-                account: CONFIG.devAccount,
-                chainId: CONFIG.sourceChain.id,
-                address: contracts.l2ToL2CrossDomainMessenger.address,
-                abi: l2ToL2CrossDomainMessengerAbi,
-                functionName: 'sendMessage',
-                args: [
-                  BigInt(CONFIG.destinationChain.id),
-                  CONFIG.contracts.counter.address,
-                  incrementFunctionData,
-                ],
-              })
-            }
-            disabled={isPending || isWaitingForReceipt}
+            onClick={handleClick}
+            disabled={!address || isPending || isWaitingForReceipt || txStatus === 'success'}
+            variant={txStatus === 'success' ? 'outline' : 'default'}
           >
             {(isPending || isWaitingForReceipt) && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -193,22 +276,51 @@ const DirectMessengerCall = () => {
   );
 };
 
-const SourceChain = () => (
-  <div className="flex-1 flex flex-col gap-4 p-4">
-    <div className="text-xl font-semibold">
-      Chain: {CONFIG.sourceChain.name} ({CONFIG.sourceChain.id})
+const SourceChain = () => {
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+  const isCorrectChain = chainId === CONFIG.sourceChain.id;
+
+  return (
+    <div className="flex-1 flex flex-col gap-4 p-4 border rounded-lg">
+      <div className="flex justify-between items-center">
+        <div className="text-xl font-semibold">
+          Chain: {CONFIG.sourceChain.name} ({CONFIG.sourceChain.id})
+        </div>
+        <div className="flex items-center gap-2">
+          {isCorrectChain ? (
+            <div className="text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-100 px-2 py-1 rounded-full flex items-center gap-1">
+              <span className="h-1.5 w-1.5 bg-green-500 rounded-full"></span>
+              Connected
+            </div>
+          ) : (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={() => switchChain({ chainId: CONFIG.sourceChain.id })}
+              className="text-xs"
+            >
+              Switch Chain
+            </Button>
+          )}
+        </div>
+      </div>
+      <CounterIncrementer />
+      <Separator />
+      <DirectMessengerCall />
     </div>
-    <CounterIncrementer />
-    <Separator />
-    <DirectMessengerCall />
-  </div>
-);
+  );
+};
 
 // ============================================================================
 // Destination Chain Components (Chain B)
 // ============================================================================
 
 const DestinationChain = () => {
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+  const isCorrectChain = chainId === CONFIG.destinationChain.id;
+
   const [logs, setLogs] = useState<
     Array<{
       senderChainId: bigint;
@@ -259,9 +371,28 @@ const DestinationChain = () => {
   const sortedLogs = useMemo(() => sortBy(logs, log => -log.blockNumber), [logs]);
 
   return (
-    <div className="flex-1 flex flex-col gap-4 p-4">
-      <div className="text-xl font-semibold">
-        Chain: {CONFIG.destinationChain.name} ({CONFIG.destinationChain.id})
+    <div className="flex-1 flex flex-col gap-4 p-4 border rounded-lg">
+      <div className="flex justify-between items-center">
+        <div className="text-xl font-semibold">
+          Chain: {CONFIG.destinationChain.name} ({CONFIG.destinationChain.id})
+        </div>
+        <div className="flex items-center gap-2">
+          {isCorrectChain ? (
+            <div className="text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-100 px-2 py-1 rounded-full flex items-center gap-1">
+              <span className="h-1.5 w-1.5 bg-green-500 rounded-full"></span>
+              Connected
+            </div>
+          ) : (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={() => switchChain({ chainId: CONFIG.destinationChain.id })}
+              className="text-xs"
+            >
+              Switch Chain
+            </Button>
+          )}
+        </div>
       </div>
       <div className="text-sm text-muted-foreground">
         Watch for state changes as the counter is incremented from the source chain.
@@ -300,7 +431,7 @@ const DestinationChain = () => {
         <Separator />
 
         {/* Event Logs */}
-        <CardFooter className="p-4">
+        <CardFooter className="pt-6">
           <div className="flex flex-col gap-2 w-full">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -342,9 +473,15 @@ const DestinationChain = () => {
 
 function App() {
   return (
-    <div className="flex gap-4">
-      <SourceChain />
-      <DestinationChain />
+    <div className="flex flex-col min-h-screen">
+      <Header />
+      
+      <main className="flex-1 container mx-auto py-6">
+        <div className="flex flex-col md:flex-row gap-4">
+          <SourceChain />
+          <DestinationChain />
+        </div>
+      </main>
     </div>
   );
 }
